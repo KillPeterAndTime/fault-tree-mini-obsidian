@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>故障树编辑器 FaultTree Mini</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --border: #d8dce3; --text: #1f2937;
+    --muted: #6b7280; --accent: #1a73e8; --accent-soft: #e8f0fe;
+    --danger: #d93025;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---------- toolbar ---------- */
+  #toolbar {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+  }
+  #toolbar .logo { font-weight: 700; font-size: 15px; margin-right: 10px; color: var(--accent); }
+  #toolbar button {
+    padding: 5px 12px; border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    font-size: 13px; cursor: pointer; color: var(--text);
+  }
+  #toolbar button:hover { background: var(--accent-soft); border-color: var(--accent); }
+  #toolbar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #toolbar button.primary:hover { opacity: .92; }
+  #toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  #toolbar .spacer { flex: 1; }
+  #toolbar .filename { font-size: 12px; color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #toolbar .dirty { color: var(--danger); font-size: 12px; }
+
+  /* ---------- main ---------- */
+  #main { display: flex; flex: 1; min-height: 0; }
+
+  /* palette */
+  #palette { width: 168px; background: var(--panel); border-right: 1px solid var(--border); padding: 10px 8px; flex-shrink: 0; overflow-y: auto; }
+  #palette h3 { font-size: 12px; color: var(--muted); margin: 4px 2px 8px; font-weight: 600; }
+  .pal-item {
+    display: flex; align-items: center; gap: 8px; padding: 7px 8px; margin-bottom: 6px;
+    border: 1px solid var(--border); border-radius: 8px; cursor: grab; user-select: none; background: #fff; font-size: 13px;
+  }
+  .pal-item:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .pal-item svg { flex-shrink: 0; }
+  .pal-hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 10px; padding: 0 2px; }
+
+  /* canvas */
+  #canvas-wrap { flex: 1; position: relative; min-width: 0; }
+  #canvas { width: 100%; height: 100%; display: block; cursor: default; }
+  #canvas.panning { cursor: grabbing; }
+  #canvas.linking { cursor: crosshair; }
+  #ghost {
+    position: absolute; pointer-events: none; z-index: 50; display: none;
+    padding: 6px 12px; background: var(--accent); color: #fff; border-radius: 14px; font-size: 12px;
+  }
+  #zoombar {
+    position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,.92); border: 1px solid var(--border); border-radius: 8px;
+    padding: 3px 6px; box-shadow: 0 1px 4px rgba(0,0,0,.08); z-index: 20;
+  }
+  #zoombar button {
+    border: none; background: transparent; cursor: pointer; font-size: 13px; line-height: 1;
+    padding: 4px 8px; border-radius: 5px; color: var(--text);
+  }
+  #zoombar button:hover { background: var(--accent); color: #fff; }
+  #zoom-indicator {
+    min-width: 44px; text-align: center; font-size: 12px; color: var(--muted);
+    cursor: pointer; user-select: none; padding: 2px 4px; border-radius: 5px;
+  }
+  #zoom-indicator:hover { background: var(--accent); color: #fff; }
+
+  /* properties */
+  #props { width: 264px; background: var(--panel); border-left: 1px solid var(--border); padding: 12px; flex-shrink: 0; overflow-y: auto; }
+  #props h3 { font-size: 13px; margin-bottom: 10px; color: var(--text); }
+  #props .empty { font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .field input, .field textarea, .field select {
+    width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+  .field textarea { resize: vertical; min-height: 44px; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: flex; gap: 8px; }
+  .row2 .field { flex: 1; }
+  .radio-row { display: flex; gap: 14px; font-size: 12px; margin-bottom: 8px; color: var(--text); }
+  .radio-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .computed {
+    background: var(--accent-soft); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin-bottom: 10px; color: var(--text);
+  }
+  .computed b { font-family: Consolas, monospace; }
+  #btn-del-node { width: 100%; padding: 7px; border: 1px solid #f3c2bd; background: #fdf1f0; color: var(--danger); border-radius: 6px; cursor: pointer; font-size: 13px; }
+  #btn-del-node:hover { background: #fbe3e0; }
+
+  /* status bar */
+  #statusbar {
+    display: flex; align-items: center; gap: 18px; padding: 5px 12px; background: var(--panel);
+    border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); flex-shrink: 0;
+  }
+  #statusbar .result { color: var(--text); font-weight: 600; font-family: Consolas, monospace; }
+  #statusbar .result.warn { color: var(--danger); }
+  #statusbar .spacer { flex: 1; }
+
+  /* modal */
+  #modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; z-index: 100; align-items: center; justify-content: center; }
+  #modal { background: #fff; border-radius: 12px; padding: 22px 26px; max-width: 560px; max-height: 80vh; overflow-y: auto; font-size: 13px; line-height: 1.8; }
+  #modal h2 { font-size: 16px; margin-bottom: 10px; }
+  #modal table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+  #modal td, #modal th { border: 1px solid var(--border); padding: 5px 9px; font-size: 12px; text-align: left; }
+  #modal .btn-close { margin-top: 12px; padding: 6px 18px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  kbd { background: #eef0f3; border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; font-family: Consolas, monospace; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <span class="logo">⏚ FaultTree Mini</span>
+    <button id="btn-new">新建</button>
+    <button id="btn-open">打开</button>
+    <button id="btn-save">保存</button>
+    <button id="btn-saveas">另存为</button>
+    <div class="sep"></div>
+    <button id="btn-calc" class="primary">计算 ▶</button>
+    <button id="btn-layout">自动布局</button>
+    <div class="sep"></div>
+    <button id="btn-png">导出 PNG</button>
+    <button id="btn-svg">导出 SVG</button>
+    <div class="spacer"></div>
+    <span class="dirty" id="dirty-mark" style="display:none">● 未保存</span>
+    <span class="filename" id="file-name">未命名.fta.json</span>
+    <button id="btn-help">?</button>
+  </div>
+
+  <div id="main">
+    <div id="palette">
+      <h3>元件库（拖入画布）</h3>
+      <div id="pal-items"></div>
+      <div class="pal-hint">
+        · 拖动节点上的<b>底部小圆点</b>到另一节点建立父子逻辑<br>
+        · 滚轮缩放（以光标为中心），<b>中键拖动</b>或拖空白处平移<br>
+        · <kbd>F</kbd> 适应视图 · <kbd>T</kbd> 定位顶事件 · <kbd>+/-/0</kbd> 缩放<br>
+        · 选中后按 <kbd>Delete</kbd> 删除节点及其子树<br>
+        · <kbd>Ctrl+S</kbd> 保存，<kbd>Ctrl+O</kbd> 打开
+      </div>
+    </div>
+    <div id="canvas-wrap">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e6e9ee" stroke-width="1"/>
+          </pattern>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6470"/>
+          </marker>
+        </defs>
+        <rect id="bg-rect" x="-100000" y="-100000" width="200000" height="200000" fill="url(#grid)"/>
+        <g id="viewport"></g>
+      </svg>
+      <div id="ghost"></div>
+      <div id="zoombar">
+        <button id="zoom-out" title="缩小 (-)">−</button>
+        <span id="zoom-indicator" title="点击复位 100%">100%</span>
+        <button id="zoom-in" title="放大 (+)">＋</button>
+        <button id="zoom-fit" title="适应视图：缩放至显示整棵树 (F)">⤢ 适应</button>
+        <button id="zoom-top" title="定位顶事件 (T)">⌖ 顶事件</button>
+      </div>
+    </div>
+    <div id="props">
+      <h3>属性</h3>
+      <div id="props-body"><div class="empty">未选中节点。<br>点击画布中的节点进行编辑；从左侧元件库拖入新节点。</div></div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <span>节点: <b id="st-nodes">0</b></span>
+    <span>连接: <b id="st-edges">0</b></span>
+    <span>顶事件失效概率: <span class="result" id="st-result">—</span></span>
+    <span id="st-msg"></span>
+    <span class="spacer"></span>
+    <span id="st-hint">拖拽绘制 · OR=概率和 · AND=概率积 · 表决门=k/n</span>
+  </div>
+</div>
+
+<div id="modal-mask"><div id="modal">
+  <h2>FaultTree Mini — 轻量故障树绘制与计算</h2>
+  <p>面向快速建模的小型故障树工具：像 draw.io 一样拖拽绘制，输入底事件失效率数据，即时计算顶事件失效概率，项目保存为本地文件，可随时打开继续修改。</p>
+  <h2 style="font-size:14px">元件与计算规则</h2>
+  <table>
+    <tr><th>元件</th><th>说明</th><th>概率计算</th></tr>
+    <tr><td>顶事件 / 中间事件</td><td>矩形，由下级门/事件逻辑汇成</td><td>由连接的门或直接输入</td></tr>
+    <tr><td>基本事件（底事件）</td><td>圆形，输入失效率 λ 与任务时间 t</td><td>q = 1 − e<sup>−λt</sup>（或直接输入概率）</td></tr>
+    <tr><td>未展开事件</td><td>菱形，不再继续分析的分支</td><td>直接输入概率</td></tr>
+    <tr><td>OR 门（或门）</td><td>任一输入发生即发生</td><td>q = 1 − ∏(1 − qᵢ)（概率和）</td></tr>
+    <tr><td>AND 门（与门）</td><td>所有输入同时发生</td><td>q = ∏qᵢ（概率积 / 交集）</td></tr>
+    <tr><td>表决门 k/n</td><td>n 个输入中至少 k 个发生</td><td>Poisson-binomial 精确计算</td></tr>
+  </table>
+  <h2 style="font-size:14px">ARP4761A 失效状态分级 (AC 25.1309-1B)</h2>
+  <table>
+    <tr><th>等级</th><th>每飞行小时概率目标</th></tr>
+    <tr><td>灾难级 Catastrophic</td><td>≤ 1×10⁻⁹ (且不允许单点失效导致)</td></tr>
+    <tr><td>危险级 Hazardous</td><td>≤ 1×10⁻⁷</td></tr>
+    <tr><td>较大级 Major</td><td>≤ 1×10⁻⁵</td></tr>
+    <tr><td>较小级 Minor</td><td>≤ 1×10⁻³</td></tr>
+    <tr><td>无安全影响</td><td>无定量要求</td></tr>
+  </table>
+  <p style="font-size:12px">顶事件选择等级后，计算结果自动对比目标并显示 ✓/✗ 判定。注意目标为每飞行小时口径，底事件概率须按每飞行小时输入（任务时间填 1）。</p>
+  <h2 style="font-size:14px">符号标准</h2>
+  <p style="font-size:12px">本工具图形符号遵循 <b>GB/T 4888-2009《故障树名词术语和符号》</b>与 <b>IEC 61025:2006</b> 的通行画法：矩形=顶事件/中间事件，圆形=基本事件（底事件），菱形=未展开（省略）事件，房形=正常/条件事件（概率取 0 或 1，用于边界条件与 what-if），D 形=AND 门（平底+半圆顶），盾形=OR 门（凸拱顶+凹弧底），表决门为盾形加 k/n 标注。IEC 61025 第 4 章注明符号几何可随软件有所变化，上述为审查方普遍接受的惯例画法；三角转移符号、禁门、顺序与门、异或门将在后续版本提供。</p>
+  <h2 style="font-size:14px">快捷键</h2>
+  <p><kbd>Ctrl+S</kbd> 保存项目 · <kbd>Ctrl+O</kbd> 打开项目 · <kbd>Delete</kbd> 删除选中节点及子树 · <kbd>Esc</kbd> 取消拖拽<br>
+  <kbd>F</kbd> 适应视图（显示整棵树） · <kbd>T</kbd> 定位顶事件 · <kbd>+</kbd>/<kbd>-</kbd>/<kbd>0</kbd> 缩放/复位 · 中键拖动平移画布<br>
+  双击节点可在右侧属性面板聚焦名称输入框。λ 与 t 请使用一致的时间单位（如每小时 / 每飞行小时）。大型树建议：先"自动布局"再按 <kbd>F</kbd>，用 <kbd>T</kbd> 回顶事件。</p>
+  <h2 style="font-size:14px">项目文件</h2>
+  <p>使用 <kbd>Ctrl+S</kbd> 保存为 <b>.fta.json</b>（Chrome/Edge 支持直接写回原文件；其他浏览器下载副本）。打开项目点击工具栏"打开"。</p>
+  <button class="btn-close" onclick="document.getElementById('modal-mask').style.display='none'">知道了</button>
+</div></div>
+
+<input type="file" id="file-fallback" accept=".json,.fta.json" style="display:none">
+
+<script>
+"use strict";
+/* ================= 数据模型 ================= */
+const NODE_TYPES = {
+  top:        { name: "顶事件",   shape: "rect",    w: 156, h: 46, fill: "#fdecea", stroke: "#c5221f" },
+  inter:      { name: "中间事件", shape: "rect",    w: 156, h: 46, fill: "#ffffff", stroke: "#5b6470" },
+  basic:      { name: "基本事件", shape: "circle",  w: 48,  h: 48, fill: "#ecfdf5", stroke: "#0f9d76" },
+  undeveloped:{ name: "未展开事件", shape: "diamond", w: 96, h: 50, fill: "#f1f3f5", stroke: "#5b6470" },
+  house:      { name: "房形事件", shape: "house",   w: 56,  h: 44, fill: "#fff7e6", stroke: "#8a6d1a" },
+  or:         { name: "OR 门",    shape: "or",      w: 60,  h: 40, fill: "#e8f0fe", stroke: "#1a73e8" },
+  and:        { name: "AND 门",   shape: "and",     w: 60,  h: 40, fill: "#fef7e0", stroke: "#b06000" },
+  vote:       { name: "表决门 k/n", shape: "or",    w: 60,  h: 40, fill: "#f3e8fd", stroke: "#7627bb" }
+};
+const GATES = new Set(["or", "and", "vote"]);
+const LS_KEY = "fta-mini-doc";
+
+let nodes = {};        // id -> node
+let edges = [];        // {from, to}  from=parent(gate), to=child
+let nextId = 1;
+let selId = null;
+let dirty = false;
+let view = { x: 60, y: 40, k: 1 };
+let fileName = "未命名.fta.json";
+let fileHandle = null;
+
+const $ = (id) => document.getElementById(id);
+const svg = $("canvas");
+const viewport = $("viewport");
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function el(name, attrs, parent) {
+  const e = document.createElementNS(SVGNS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function markDirty() { dirty = true; $("dirty-mark").style.display = ""; saveLocal(); _subMemo.clear(); _bddCache.clear(); }
+function clearDirty() { dirty = false; $("dirty-mark").style.display = "none"; _subMemo.clear(); _bddCache.clear(); }
+
+/* ================= 坐标换算 ================= */
+function toWorld(cx, cy) {
+  const r = svg.getBoundingClientRect();
+  return { x: (cx - r.left - view.x) / view.k, y: (cy - r.top - view.y) / view.k };
+}
+function applyView() {
+  viewport.setAttribute("transform", `translate(${view.x},${view.y}) scale(${view.k})`);
+  $("zoom-indicator").textContent = Math.round(view.k * 100) + "%";
+}
+
+/* ---------- 视图导航 ---------- */
+const K_MIN = 0.08, K_MAX = 5;
+function zoomAt(k2, cx, cy) {          // 以画布坐标 (cx,cy) 为锚点缩放；缺省为画布中心
+  const r = svg.getBoundingClientRect();
+  if (cx === undefined) { cx = r.width / 2; cy = r.height / 2; }
+  k2 = Math.min(K_MAX, Math.max(K_MIN, k2));
+  view.x = cx - (cx - view.x) * (k2 / view.k);
+  view.y = cy - (cy - view.y) * (k2 / view.k);
+  view.k = k2;
+  applyView();
+}
+function treeBBox() {
+  const ids = Object.keys(nodes);
+  if (!ids.length) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id of ids) {
+    const n = nodes[id], t = NODE_TYPES[n.type];
+    minX = Math.min(minX, n.x - t.w / 2); maxX = Math.max(maxX, n.x + t.w / 2);
+    minY = Math.min(minY, n.y - t.h / 2 - 16);          // 概率徽标余量
+    maxY = Math.max(maxY, n.y + t.h / 2 + 24);          // 下方标签余量
+  }
+  return { minX, minY, maxX, maxY };
+}
+function fitView() {
+  const b = treeBBox();
+  const r = svg.getBoundingClientRect();
+  if (!b) { view = { x: r.width / 2, y: r.height / 2, k: 1 }; applyView(); return; }
+  const pad = 50;
+  const k = Math.min((r.width - pad * 2) / Math.max(1, b.maxX - b.minX),
+                     (r.height - pad * 2) / Math.max(1, b.maxY - b.minY), K_MAX);
+  view.k = Math.min(K_MAX, Math.max(K_MIN, k));
+  view.x = r.width / 2 - (b.minX + b.maxX) / 2 * view.k;
+  view.y = r.height / 2 - (b.minY + b.maxY) / 2 * view.k;
+  applyView();
+}
+function centerOnNode(id) {
+  const n = nodes[id];
+  if (!n) return;
+  const r = svg.getBoundingClientRect();
+  const t = NODE_TYPES[n.type];
+  let k = Math.max(view.k, 0.8);                        // 定位时适当放大便于查看
+  view.x = r.width / 2 - n.x * k;
+  view.y = r.height / 2 - n.y * k;
+  view.k = k;
+  applyView();
+}
+function findTopNode() {
+  const roots = Object.values(nodes).filter(n => !parentOf(n.id));
+  return roots.find(n => n.type === "top") || roots[0];
+}
+
+/* ================= 形状绘制 ================= */
+function shapePath(type, cx, cy, w, h) {
+  const hw = w / 2, hh = h / 2;
+  switch (NODE_TYPES[type].shape) {
+    case "rect":    return { tag: "rect", attrs: { x: cx - hw, y: cy - hh, width: w, height: h, rx: 5 } };
+    case "circle":  return { tag: "circle", attrs: { cx, cy, r: w / 2 } };
+    case "diamond": return { tag: "polygon", attrs: { points: `${cx},${cy-hh} ${cx+hw},${cy} ${cx},${cy+hh} ${cx-hw},${cy}` } };
+    case "house": // 房形（GB/T 4888 正常事件）：五边形，三角屋顶+方屋身
+      return { tag: "polygon", attrs: { points: `${cx},${cy-hh} ${cx+hw},${cy-hh*0.3} ${cx+hw},${cy+hh} ${cx-hw},${cy+hh} ${cx-hw},${cy-hh*0.3}` } };
+    case "or": { // OR 门：标准盾形 —— 顶部凸弧（圆拱）+ 底部凹弧（IEC 61025 / NUREG-0492 惯例）
+      const d = `M ${cx-hw} ${cy+hh}
+                 Q ${cx-hw} ${cy-hh}, ${cx} ${cy-hh}
+                 Q ${cx+hw} ${cy-hh}, ${cx+hw} ${cy+hh}
+                 Q ${cx} ${cy+hh*0.25}, ${cx-hw} ${cy+hh} Z`;
+      return { tag: "path", attrs: { d } };
+    }
+    case "and": {
+      const d = `M ${cx-hw} ${cy+hh} L ${cx-hw} ${cy} A ${hw} ${hh} 0 0 1 ${cx+hw} ${cy} L ${cx+hw} ${cy+hh} Z`;
+      return { tag: "path", attrs: { d } };
+    }
+  }
+}
+
+function childrenOf(id) { return edges.filter(e => e.from === id).map(e => e.to); }
+function parentOf(id) { const e = edges.find(e => e.to === id); return e ? e.from : null; }
+
+/* ================= 渲染 ================= */
+function renderAll() {
+  viewport.innerHTML = "";
+  // edges —— 直角总线式走线：同一父节点的所有子边共用一条水平总线（梳状），大型树更整洁
+  for (const e of edges) {
+    const p = nodes[e.from], c = nodes[e.to];
+    if (!p || !c) continue;
+    const t = NODE_TYPES[p.type];
+    const x1 = p.x, y1 = p.y + t.h / 2;
+    const x2 = c.x, y2 = c.y - NODE_TYPES[c.type].h / 2;
+    const minChildTop = Math.min(...edges.filter(e2 => e2.from === e.from && nodes[e2.to]).map(e2 => {
+      const cc = nodes[e2.to];
+      return cc.y - NODE_TYPES[cc.type].h / 2;
+    }));
+    const busY = y1 + (minChildTop - y1) / 2;
+    const sel = (selId === e.from || selId === e.to);
+    el("polyline", {
+      points: `${x1},${y1} ${x1},${busY} ${x2},${busY} ${x2},${y2}`,
+      fill: "none", stroke: sel ? "#1a73e8" : "#5b6470",
+      "stroke-width": sel ? 2 : 1.4, "marker-end": "url(#arrow)"
+    }, viewport);
+  }
+  // nodes
+  for (const id in nodes) {
+    const n = nodes[id], t = NODE_TYPES[n.type];
+    const g = el("g", { "data-id": id, cursor: "move" }, viewport);
+    const sh = shapePath(n.type, n.x, n.y, t.w, t.h);
+    const shape = el(sh.tag, Object.assign({}, sh.attrs, {
+      fill: n._err ? "#fdecea" : t.fill, stroke: selId === id ? "#1a73e8" : t.stroke,
+      "stroke-width": selId === id ? 2.5 : (n.type === "top" ? 2 : 1.4)
+    }), g);
+    // 标签
+    const labelY = (t.shape === "circle" || t.shape === "diamond" || t.shape === "house" || GATES.has(n.type)) ? n.y + t.h / 2 + 14 : n.y;
+    const txt = el("text", {
+      x: n.x, y: labelY, "text-anchor": "middle", "font-size": 13, fill: "#1f2937",
+      "font-family": "Segoe UI, Microsoft YaHei, sans-serif", "dominant-baseline": t.shape === "rect" ? "central" : "auto"
+    }, g);
+    txt.textContent = n.label || NODE_TYPES[n.type].name;
+    const tip = el("title", {}, g);
+    tip.textContent = n.label + (n.desc ? "\n" + n.desc : "");
+    // 概率徽标
+    if (n._p !== undefined) {
+      let badgeColor = "#0b57a4";
+      if (n.type === "top" && n.sev && n._sevOk !== undefined) badgeColor = n._sevOk ? "#0f9d76" : "#c5221f";
+      const pt = el("text", {
+        x: n.x, y: n.y - t.h / 2 - 6, "text-anchor": "middle", "font-size": 11,
+        fill: badgeColor, "font-family": "Consolas, monospace"
+      }, g);
+      pt.textContent = "P=" + fmtExp(n._p);
+    }
+    // 表决门 k/n
+    if (n.type === "vote") {
+      const vt = el("text", { x: n.x, y: n.y + 2, "text-anchor": "middle", "font-size": 11, fill: "#7627bb", "font-family": "Consolas, monospace" }, g);
+      vt.textContent = `${n.k ?? 2}/${n.n ?? 3}`;
+    }
+    // 输出端口（底部小圆点）
+    const port = el("circle", {
+      cx: n.x, cy: n.y + t.h / 2, r: 5, fill: "#fff", stroke: "#1a73e8", "stroke-width": 1.6,
+      class: "port", cursor: "crosshair", opacity: (selId === id || GATES.has(n.type)) ? 1 : 0.55
+    }, g);
+    port.dataset.port = id;
+  }
+  $("st-nodes").textContent = Object.keys(nodes).length;
+  $("st-edges").textContent = edges.length;
+}
+
+function fmtExp(v) {
+  if (!isFinite(v)) return "∞";
+  if (v === 0) return "0";
+  return v.toExponential(3).replace("e", "E");
+}
+
+/* ================= 节点操作 ================= */
+function addNode(type, x, y) {
+  const n = {
+    id: "n" + (nextId++), type, x: Math.round(x), y: Math.round(y),
+    label: NODE_TYPES[type].name, desc: "", k: 2, n: 3,
+    inputMode: type === "house" ? "prob" : "rate",
+    rate: 1e-5, time: 10000, prob: type === "house" ? 1 : 1e-4
+  };
+  nodes[n.id] = n;
+  selectNode(n.id); markDirty(); renderAll();
+  return n;
+}
+function deleteNodeSubtree(id) {
+  const doomed = new Set([id]);
+  const walk = (x) => childrenOf(x).forEach(c => { doomed.add(c); walk(c); });
+  walk(id);
+  if (!confirm(`删除节点及其子树（共 ${doomed.size} 个节点）？`)) return;
+  for (const d of doomed) delete nodes[d];
+  edges = edges.filter(e => !doomed.has(e.from) && !doomed.has(e.to));
+  selId = null; markDirty(); renderAll(); showProps();
+}
+function linkNodes(fromId, toId) {
+  if (fromId === toId) return warn("不能连接自身");
+  // 目标只能有一个父
+  if (parentOf(toId)) return warn("该节点已有上级输入（每个节点只允许一个父节点）");
+  // 顶事件不允许作为子节点
+  if (nodes[toId].type === "top") return warn("顶事件不能作为子节点");
+  // 环路检测：从 toId 向下是否能到达 fromId
+  const seen = new Set();
+  const walk = (x) => { if (x === fromId) return true; if (seen.has(x)) return false; seen.add(x); return childrenOf(x).some(walk); };
+  if (walk(toId)) return warn("不允许出现循环逻辑");
+  edges.push({ from: fromId, to: toId });
+  markDirty(); renderAll();
+}
+function warn(msg) { $("st-msg").textContent = "⚠ " + msg; setTimeout(() => { if ($("st-msg").textContent.startsWith("⚠ ")) $("st-msg").textContent = ""; }, 4000); }
+
+function selectNode(id) {
+  selId = id; renderAll(); showProps();
+}
+
+/* ================= 属性面板 ================= */
+function showProps() {
+  const body = $("props-body");
+  if (!selId || !nodes[selId]) {
+    body.innerHTML = '<div class="empty">未选中节点。<br>点击画布中的节点进行编辑；从左侧元件库拖入新节点。</div>';
+    return;
+  }
+  const n = nodes[selId];
+  const isBE = (n.type === "basic" || n.type === "undeveloped");
+  const isHouse = n.type === "house";
+  let html = `
+    <div class="field"><label>类型</label><input type="text" value="${NODE_TYPES[n.type].name}" disabled></div>
+    <div class="field"><label>名称</label><input type="text" id="p-label" value="${esc(n.label)}"></div>
+    <div class="field"><label>失效模式 / 说明</label><textarea id="p-desc">${esc(n.desc)}</textarea></div>`;
+  if (isHouse) {
+    html += `
+      <div class="radio-row">
+        <label><input type="radio" name="h-state" value="1" ${n.prob === 1 ? "checked" : ""}>发生 (q=1)</label>
+        <label><input type="radio" name="h-state" value="0" ${n.prob !== 1 ? "checked" : ""}>不发生 (q=0)</label>
+      </div>
+      <div class="computed">房形事件（GB/T 4888 正常事件 / IEC 61025 house event）：表示确定性发生的正常状态或边界条件，用于 what-if 切换与树分支屏蔽。</div>`;
+  }
+  if (n.type === "top" || n.type === "inter") {
+    html += `<div class="computed">概率由下级逻辑推导：单个输入直接传递，多个输入按 OR 门合并。</div>`;
+  }
+  if (n.type === "top") {
+    const opts = ['<option value="">未分类</option>'];
+    for (const key in ARP_TARGETS) opts.push(`<option value="${key}" ${n.sev === key ? "selected" : ""}>${ARP_TARGETS[key].name} (≤${ARP_TARGETS[key].target ? "1E-" + Math.round(-Math.log10(ARP_TARGETS[key].target)) : "—"})</option>`);
+    html += `<div class="field"><label>失效状态等级 (ARP4761A)</label><select id="p-sev">${opts.join("")}</select></div>
+      <div class="computed" style="font-size:11px">计算后自动对比 AC 25.1309-1B 每飞行小时概率目标。注意：底事件概率须按每飞行小时口径输入（任务时间=1）。</div>`;
+  }
+  if (isBE) {
+    html += `
+      <div class="radio-row">
+        <label><input type="radio" name="p-mode" value="rate" ${n.inputMode !== "prob" ? "checked" : ""}>失效率 λ + 时间 t</label>
+        <label><input type="radio" name="p-mode" value="prob" ${n.inputMode === "prob" ? "checked" : ""}>直接概率 q</label>
+      </div>
+      <div id="p-rate-box" style="${n.inputMode === "prob" ? "display:none" : ""}">
+        <div class="row2">
+          <div class="field"><label>失效率 λ (/小时)</label><input type="text" id="p-rate" value="${n.rate}"></div>
+          <div class="field"><label>任务时间 t (小时)</label><input type="text" id="p-time" value="${n.time}"></div>
+        </div>
+        <div class="field"><label>时间基准</label><select id="p-unit">
+          ${["/小时", "/飞行小时", "/飞行循环", "/起降"].map(u => `<option value="${u}" ${n.unit === u ? "selected" : ""}>${u}</option>`).join("")}
+        </select></div>
+      </div>
+      <div class="field" id="p-prob-box" style="${n.inputMode === "prob" ? "" : "display:none"}"><label>失效概率 q (0~1)</label><input type="text" id="p-prob" value="${n.prob}"></div>
+      <div class="computed">计算失效概率 q = 1−e<sup>−λt</sup> ≈ <b id="p-q">—</b></div>`;
+  }
+  if (n.type === "vote") {
+    html += `
+      <div class="row2">
+        <div class="field"><label>k (至少发生)</label><input type="number" id="p-k" value="${n.k}" min="1"></div>
+        <div class="field"><label>n (输入总数)</label><input type="number" id="p-n" value="${n.n}" min="1"></div>
+      </div>`;
+  }
+  html += `<button id="btn-del-node">删除节点及其子树</button>`;
+  body.innerHTML = html;
+
+  $("p-label").addEventListener("input", e => { n.label = e.target.value; markDirty(); renderAll(); });
+  $("p-desc").addEventListener("input", e => { n.desc = e.target.value; markDirty(); });
+  if (n.type === "top") {
+    $("p-sev").addEventListener("change", e => { n.sev = e.target.value || null; markDirty(); });
+  }
+  if (isBE) {
+    $("p-unit").addEventListener("change", e => { n.unit = e.target.value; markDirty(); });
+    const modeRadios = document.querySelectorAll('input[name="p-mode"]');
+    modeRadios.forEach(r => r.addEventListener("change", () => {
+      n.inputMode = r.value;
+      $("p-rate-box").style.display = r.value === "rate" ? "" : "none";
+      $("p-prob-box").style.display = r.value === "prob" ? "" : "none";
+      markDirty();
+    }));
+    $("p-rate").addEventListener("input", e => { n.rate = parseFloat(e.target.value) || 0; markDirty(); refreshQ(); });
+    $("p-time").addEventListener("input", e => { n.time = parseFloat(e.target.value) || 0; markDirty(); refreshQ(); });
+    $("p-prob").addEventListener("input", e => { n.prob = parseFloat(e.target.value) || 0; markDirty(); refreshQ(); });
+    refreshQ();
+  }
+  if (isHouse) {
+    document.querySelectorAll('input[name="h-state"]').forEach(r => r.addEventListener("change", () => {
+      n.prob = parseFloat(r.value); n.inputMode = "prob";
+      markDirty(); renderAll();
+    }));
+  }
+  if (n.type === "vote") {
+    $("p-k").addEventListener("input", e => { n.k = Math.max(1, parseInt(e.target.value) || 1); markDirty(); renderAll(); });
+    $("p-n").addEventListener("input", e => { n.n = Math.max(1, parseInt(e.target.value) || 1); markDirty(); renderAll(); });
+  }
+  $("btn-del-node").addEventListener("click", () => deleteNodeSubtree(n.id));
+
+  function refreshQ() {
+    const q = basicProb(n);
+    const qEl = $("p-q");
+    if (qEl) qEl.textContent = fmtExp(q);
+  }
+}
+function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+
+/* ---------- ARP4761A / AC 25.1309-1B 失效状态分级与概率目标 ---------- */
+const ARP_TARGETS = {
+  cata:  { name: "灾难级 Catastrophic", target: 1e-9 },
+  haz:   { name: "危险级 Hazardous",    target: 1e-7 },
+  major: { name: "较大级 Major",        target: 1e-5 },
+  minor: { name: "较小级 Minor",        target: 1e-3 },
+  none:  { name: "无安全影响",          target: null }
+};
+
+/* ================= 概率计算 ================= */
+function basicProb(n) {
+  if (n.inputMode === "prob") return clamp01(parseFloat(n.prob) || 0);
+  const λ = Math.max(0, parseFloat(n.rate) || 0), t = Math.max(0, parseFloat(n.time) || 0);
+  return 1 - Math.exp(-λ * t);
+}
+function clamp01(v) { return Math.min(1, Math.max(0, v)); }
+
+function calcError(msg) { throw new Error(msg); }
+
+/* ---------- ROBDD 引擎: 底事件被多个门引用(共用部件)时的精确计算 ----------
+ * OR/AND 独立性递归仅在树中每个底事件恰好出现一次时精确;
+ * 真实工程故障树大量共用底事件, 此时必须按布尔语义用 BDD 求精确解。
+ * (与 SCRAM / FaultTree+ 等商业工具同方法论) */
+class Robdd {
+  constructor(probOfVar) {
+    this.nodes = [{ v: -1, low: 0, high: 0 }, { v: -1, low: 1, high: 1 }];
+    this.unique = new Map(); this.applyMemo = new Map(); this.probMemo = new Map();
+    this.probOfVar = probOfVar; this.maxNodes = 2000000;
+  }
+  mk(v, low, high) {
+    if (low === high) return low;
+    if (this.nodes.length >= this.maxNodes) throw new Error("BDD 节点数超限(变量序不佳或模型过大)");
+    const key = v + "|" + low + "|" + high;
+    let id = this.unique.get(key);
+    if (id === undefined) { id = this.nodes.length; this.nodes.push({ v, low, high }); this.unique.set(key, id); }
+    return id;
+  }
+  varNode(vi) { return this.mk(vi, 0, 1); }
+  apply(op, u, v) {
+    if (op === "or") { if (u === 1 || v === 1) return 1; if (u === 0) return v; if (v === 0) return u; if (u === v) return u; }
+    else { if (u === 0 || v === 0) return 0; if (u === 1) return v; if (v === 1) return u; if (u === v) return u; }
+    const key = op + u + "," + v;
+    let r = this.applyMemo.get(key);
+    if (r !== undefined) return r;
+    const top = Math.min(this.nodes[u].v, this.nodes[v].v);
+    const coH = x => this.nodes[x].v === top ? this.nodes[x].high : x;
+    const coL = x => this.nodes[x].v === top ? this.nodes[x].low : x;
+    r = this.mk(top, this.apply(op, coL(u), coL(v)), this.apply(op, coH(u), coH(v)));
+    this.applyMemo.set(key, r);
+    return r;
+  }
+  prob(u) {
+    if (u === 0) return 0; if (u === 1) return 1;
+    let p = this.probMemo.get(u);
+    if (p !== undefined) return p;
+    const pv = this.probOfVar(this.nodes[u].v);
+    p = pv * this.prob(this.nodes[u].high) + (1 - pv) * this.prob(this.nodes[u].low);
+    this.probMemo.set(u, p);
+    return p;
+  }
+}
+function kSubsets(arr, k) {
+  const res = [];
+  const rec = (start, cur) => { if (cur.length === k) { res.push(cur.slice()); return; }
+    for (let i = start; i < arr.length; i++) { cur.push(arr[i]); rec(i + 1, cur); cur.pop(); } };
+  rec(0, []);
+  return res;
+}
+const isLeafType = t => !GATES.has(t) && t !== "top" && t !== "inter";
+// 子树底事件出现统计(判断是否需要 BDD)
+const _subMemo = new Map();
+function subtreeStats(id) {
+  if (_subMemo.has(id)) return _subMemo.get(id);
+  const n = nodes[id];
+  let stats;
+  if (isLeafType(n.type)) stats = { set: new Set([id]), count: 1 };
+  else {
+    const merged = new Set(); let count = 0;
+    for (const c of childrenOf(id)) {
+      const s = subtreeStats(c);
+      s.set.forEach(x => merged.add(x)); count += s.count;
+    }
+    stats = { set: merged, count };
+  }
+  _subMemo.set(id, stats);
+  return stats;
+}
+function subtreeHasRepeat(id) { const s = subtreeStats(id); return s.count > s.set.size; }
+let _bddCache = new Map();
+function bddProbFor(id) {
+  if (_bddCache.has(id)) return _bddCache.get(id);
+  const varIndex = new Map(); let vi = 0;
+  (function assign(x) {
+    for (const c of childrenOf(x)) {
+      if (isLeafType(nodes[c].type)) { if (!varIndex.has(c)) varIndex.set(c, vi++); }
+      else assign(c);
+    }
+  })(id);
+  const varProb = []; for (const [nid, idx] of varIndex) varProb[idx] = basicProb(nodes[nid]);
+  const bdd = new Robdd(i => varProb[i] ?? 0);
+  const build = (x) => {
+    const n = nodes[x];
+    if (isLeafType(n.type)) return bdd.varNode(varIndex.get(x));
+    const cb = childrenOf(x).map(build);
+    if (n.type === "top" || n.type === "inter") {
+      if (cb.length === 1) return cb[0];
+      return cb.reduce((a, b) => bdd.apply("or", a, b));
+    }
+    if (n.type === "or") return cb.reduce((a, b) => bdd.apply("or", a, b));
+    if (n.type === "and") return cb.reduce((a, b) => bdd.apply("and", a, b));
+    const k = Math.min(n.k || 1, cb.length);
+    return kSubsets(cb, k).map(cs => cs.reduce((a, b) => bdd.apply("and", a, b)))
+      .reduce((a, b) => bdd.apply("or", a, b));
+  };
+  const p = bdd.prob(build(id));
+  _bddCache.set(id, p);
+  return p;
+}
+
+function computeProb(id, visiting, warns) {
+  const n = nodes[id];
+  if (!n) calcError(`节点 ${id} 不存在`);
+  if (visiting.has(id)) calcError(`检测到循环逻辑，涉及节点「${n.label}」`);
+  if (n._p !== undefined) return n._p;
+  if (isLeafType(n.type)) {
+    n._p = basicProb(n);
+    return n._p;
+  }
+  visiting.add(id);
+  const kids = childrenOf(id);
+  // 底事件重复出现 → 独立性递归不适用, 转 BDD 精确计算
+  if (kids.length > 0 && subtreeHasRepeat(id)) {
+    n._p = bddProbFor(id);
+    visiting.delete(id);
+    return n._p;
+  }
+  if (n.type === "top" || n.type === "inter") {
+    // 顶事件/中间事件：概率由下级输入推导，不使用自身失效率数据
+    if (kids.length === 1) {
+      n._p = computeProb(kids[0], visiting, warns);
+    } else if (kids.length > 1) {
+      warns.push(`「${n.label}」下方未连接逻辑门，已按 OR 门合并处理`);
+      let prod = 1;
+      for (const k of kids) prod *= (1 - computeProb(k, visiting, warns));
+      n._p = 1 - prod;
+    } else {
+      warns.push(`「${n.label}」没有输入，按概率 0 处理`);
+      n._p = 0;
+    }
+    visiting.delete(id);
+    return n._p;
+  }
+  if (kids.length === 0) {
+    warns.push(`门「${n.label}」没有输入，按概率 0 处理`);
+    n._p = 0;
+  } else if (n.type === "or") {
+    let prod = 1;
+    for (const k of kids) prod *= (1 - computeProb(k, visiting, warns));
+    n._p = 1 - prod;
+  } else if (n.type === "and") {
+    let prod = 1;
+    for (const k of kids) prod *= computeProb(k, visiting, warns);
+    n._p = prod;
+  } else if (n.type === "vote") {
+    const k = Math.min(n.k || 1, kids.length);
+    const ps = kids.map(kid => computeProb(kid, visiting, warns));
+    // Poisson-binomial DP: P(X >= k)
+    let dp = [1];
+    for (const p of ps) {
+      const nd = new Array(dp.length + 1).fill(0);
+      for (let j = 0; j < dp.length; j++) { nd[j] += dp[j] * (1 - p); nd[j + 1] += dp[j] * p; }
+      dp = nd;
+    }
+    n._p = dp.slice(k).reduce((a, b) => a + b, 0);
+  }
+  visiting.delete(id);
+  return n._p;
+}
+
+function runCalc() {
+  for (const id in nodes) delete nodes[id]._p;
+  const warns = [];
+  try {
+    const visiting = new Set();
+    // 找顶事件（或无父节点）作为输出
+    const roots = Object.values(nodes).filter(n => !parentOf(n.id));
+    let topP = null, topLabel = "—";
+    if (roots.length) {
+      const top = roots.find(n => n.type === "top") || roots[0];
+      topP = computeProb(top.id, visiting, warns);
+      topLabel = top.label;
+    } else warns.push("画布为空");
+    const res = $("st-result");
+    if (topP !== null) {
+      let verdict = "";
+      const topNode = roots.find(n => n.type === "top") || roots[0];
+      if (topNode.type === "top" && topNode.sev && ARP_TARGETS[topNode.sev] && ARP_TARGETS[topNode.sev].target) {
+        const tgt = ARP_TARGETS[topNode.sev].target;
+        topNode._sevOk = topP <= tgt;
+        verdict = topNode._sevOk
+          ? ` ✓ 满足 ARP4761A ${ARP_TARGETS[topNode.sev].name}目标 (≤${fmtExp(tgt)})`
+          : ` ✗ 超出 ARP4761A ${ARP_TARGETS[topNode.sev].name}目标 (≤${fmtExp(tgt)})`;
+      }
+      renderAll();
+      res.classList.toggle("warn", verdict.startsWith(" ✗"));
+      res.textContent = `${fmtExp(topP)}  (${topLabel})${verdict}`;
+    } else renderAll();
+    $("st-msg").textContent = warns.length ? "⚠ " + warns.join("；") : "✓ 计算完成";
+  } catch (err) {
+    renderAll();
+    const res = $("st-result");
+    res.textContent = "计算失败"; res.classList.add("warn");
+    $("st-msg").textContent = "⚠ " + err.message;
+    alert(err.message);
+  }
+}
+
+/* ================= 自动布局 ================= */
+function autoLayout() {
+  const roots = Object.values(nodes).filter(n => !parentOf(n.id));
+  if (!roots.length) { warn("画布为空"); return; }
+  // 以顶事件为主根，其他无父节点作为独立小树一起布局
+  const mainRoot = roots.find(n => n.type === "top") || roots[0];
+  const LEVEL = 120, LEAF = 200, MARGIN_X = 80, MARGIN_Y = 90;
+  let cursor = MARGIN_X;
+  const depths = {};
+  function place(id, depth) {
+    const n = nodes[id], t = NODE_TYPES[n.type];
+    depths[id] = depth;
+    const kids = childrenOf(id);
+    let span;
+    if (kids.length === 0) {
+      n.x = cursor + LEAF / 2; cursor += LEAF; span = LEAF;
+    } else {
+      let s = 0;
+      const xs = [];
+      for (const kid of kids) { s += place(kid, depth + 1); xs.push(nodes[kid].x); }
+      n.x = (xs[0] + xs[xs.length - 1]) / 2;
+      span = s;
+    }
+    return span;
+  }
+  const ordered = [mainRoot, ...roots.filter(r => r !== mainRoot)];
+  for (const r of ordered) place(r.id, 0);
+  for (const id in nodes) nodes[id].y = MARGIN_Y + depths[id] * LEVEL;
+  markDirty(); renderAll(); fitView();
+}
+
+/* ================= 保存 / 打开 ================= */
+function serialize() {
+  return JSON.stringify({
+    app: "FaultTreeMini", version: 1, name: fileName,
+    nodes: Object.values(nodes).map(n => ({ id: n.id, type: n.type, x: n.x, y: n.y, label: n.label, desc: n.desc, k: n.k, n: n.n, inputMode: n.inputMode, rate: n.rate, time: n.time, prob: n.prob, sev: n.sev || null, unit: n.unit || "/小时" })),
+    edges, nextId
+  }, null, 2);
+}
+function deserialize(json) {
+  const d = JSON.parse(json);
+  if (d.app !== "FaultTreeMini") throw new Error("不是 FaultTreeMini 项目文件");
+  nodes = {}; edges = d.edges || []; nextId = d.nextId || 1;
+  for (const n of (d.nodes || [])) nodes[n.id] = Object.assign({ k: 2, n: 3, inputMode: "rate", rate: 1e-5, time: 10000, prob: 1e-4, desc: "", sev: null, unit: "/小时" }, n);
+  selId = null;
+  fileName = d.name || "未命名.fta.json";
+  $("file-name").textContent = fileName;
+}
+function saveLocal() { try { localStorage.setItem(LS_KEY, serialize()); } catch (e) {} }
+
+async function openFile() {
+  if (window.showOpenFilePicker) {
+    try {
+      const [h] = await window.showOpenFilePicker({ types: [{ description: "故障树项目", accept: { "application/json": [".json"] } }] });
+      const text = await (await h.getFile()).text();
+      deserialize(text); fileHandle = h;
+    } catch (e) { if (e.name !== "AbortError") fallbackOpen(); return; }
+  } else fallbackOpen();
+  clearDirty(); renderAll(); showProps(); fitView();
+  $("st-msg").textContent = "✓ 已打开 " + fileName;
+}
+function fallbackOpen() { $("file-fallback").click(); }
+
+$("file-fallback").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { deserialize(await f.text()); fileHandle = null; clearDirty(); renderAll(); showProps(); fitView(); $("st-msg").textContent = "✓ 已打开 " + fileName; }
+  catch (err) { alert("打开失败：" + err.message); }
+  e.target.value = "";
+});
+
+async function saveFile(saveAs) {
+  const json = serialize();
+  if (window.showSaveFilePicker && (fileHandle || saveAs || !savedBefore())) {
+    try {
+      if (!fileHandle || saveAs) {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: "故障树项目", accept: { "application/json": [".json"] } }]
+        });
+      }
+      const w = await fileHandle.createWritable(); await w.write(json); await w.close();
+      fileName = fileHandle.name || fileName;
+    } catch (e) { if (e.name !== "AbortError") { downloadJson(json); } else return; }
+  } else downloadJson(json);
+  $("file-name").textContent = fileName;
+  clearDirty();
+  $("st-msg").textContent = "✓ 已保存 " + fileName;
+}
+let savedOnce = false;
+function savedBefore() { if (!savedOnce) { savedOnce = true; return false; } return true; }
+function downloadJson(json) {
+  const blob = new Blob([json], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = fileName; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+/* ================= 导出图片 ================= */
+function buildExportSvg(scale) {
+  const r = viewport.getBBox();
+  const m = 30;
+  const w = (r.width + m * 2), h = (r.height + m * 2);
+  const s = document.createElementNS(SVGNS, "svg");
+  s.setAttribute("xmlns", SVGNS);
+  s.setAttribute("width", Math.ceil(w)); s.setAttribute("height", Math.ceil(h));
+  s.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  el("rect", { x: 0, y: 0, width: w, height: h, fill: "#ffffff" }, s);
+  const g = el("g", { transform: `translate(${m - r.x},${m - r.y})` }, s);
+  for (const child of [...viewport.children]) g.appendChild(child.cloneNode(true));
+  return s;
+}
+function exportSvgFile() {
+  if (!Object.keys(nodes).length) return warn("画布为空");
+  const s = buildExportSvg();
+  const blob = new Blob([new XMLSerializer().serializeToString(s)], { type: "image/svg+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName.replace(/\.json$/, "") + ".svg"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+function exportPng() {
+  if (!Object.keys(nodes).length) return warn("画布为空");
+  const s = buildExportSvg();
+  const xml = new XMLSerializer().serializeToString(s);
+  const img = new Image();
+  const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
+  img.onload = () => {
+    const scale = 2;
+    const c = document.createElement("canvas");
+    c.width = img.width * scale; c.height = img.height * scale;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    c.toBlob(b => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = fileName.replace(/\.json$/, "") + ".png"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }, "image/png");
+  };
+  img.src = url;
+}
+
+/* ================= 视图适配 ================= */
+function fitView() {
+  if (!Object.keys(nodes).length) { view = { x: 60, y: 40, k: 1 }; applyView(); return; }
+  const r = viewport.getBBox();
+  const vw = svg.clientWidth, vh = svg.clientHeight;
+  const k = Math.min(1.2, Math.min(vw / (r.width + 120), vh / (r.height + 120)));
+  view.k = k;
+  view.x = (vw - r.width * k) / 2 - r.x * k;
+  view.y = (vh - r.height * k) / 2 - r.y * k;
+  applyView();
+}
+
+/* ================= 交互：拖拽/连线/平移/缩放 ================= */
+const paletteDefs = [
+  ["top", "M4 2 h20 v12 h-20 z", "矩形"],
+  ["inter", "M4 2 h20 v12 h-20 z", "矩形"],
+  ["basic", "M14 2 a12 12 0 1 0 0.01 0", "圆形"],
+  ["undeveloped", "M14 1 L27 8 L14 15 L1 8 Z", "菱形"],
+  ["house", "M14 1 L26 7 L26 15 L2 15 L2 7 Z", "房形"],
+  ["or", "M3 15 Q3 2 14 2 Q25 2 25 15 Q14 8 3 15 Z", "盾形"],
+  ["and", "M3 15 L3 8 A11 8 0 0 1 25 8 L25 15 Z", "D形"],
+  ["vote", "M3 15 Q3 2 14 2 Q25 2 25 15 Q14 8 3 15 Z", "盾形"]
+];
+(function initPalette() {
+  const box = $("pal-items");
+  for (const [type, d, hint] of paletteDefs) {
+    const t = NODE_TYPES[type];
+    const item = document.createElement("div");
+    item.className = "pal-item"; item.dataset.type = type;
+    item.innerHTML = `<svg width="28" height="17" viewBox="0 0 28 17"><path d="${d}" fill="${t.fill}" stroke="${t.stroke}" stroke-width="1.3"/></svg><span>${t.name}</span>`;
+    box.appendChild(item);
+    // 自定义拖拽
+    item.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      const wrapRect = $("canvas-wrap").getBoundingClientRect();
+      dragNew = { type, wrapRect };
+      const g = $("ghost");
+      g.style.display = "block"; g.style.left = ev.clientX - wrapRect.left + 12 + "px"; g.style.top = ev.clientY - wrapRect.top + 12 + "px";
+      g.textContent = t.name;
+    });
+  }
+})();
+
+let dragNew = null;      // 从元件库拖新节点
+let dragMove = null;     // 移动节点
+let dragPort = null;     // 连线
+let panning = null;
+let tempLine = null;
+
+svg.addEventListener("mousedown", e => {
+  $("st-msg").textContent = "";
+  if (e.button === 1) {               // 中键：任意位置平移画布（含节点上方）
+    e.preventDefault();
+    panning = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+    svg.classList.add("panning");
+    return;
+  }
+  const portId = e.target.dataset && e.target.dataset.port;
+  const nodeG = e.target.closest && e.target.closest("g[data-id]");
+  if (portId) {                       // 开始连线
+    dragPort = portId;
+    tempLine = el("polyline", { points: "0,0", fill: "none", stroke: "#1a73e8", "stroke-width": 1.8, "stroke-dasharray": "5,4", "pointer-events": "none" }, viewport);
+    svg.classList.add("linking");
+    e.preventDefault();
+    return;
+  }
+  if (nodeG) {                        // 选中 + 移动
+    const id = nodeG.dataset.id;
+    selectNode(id);
+    const w = toWorld(e.clientX, e.clientY);
+    dragMove = { id, dx: nodes[id].x - w.x, dy: nodes[id].y - w.y, moved: false };
+    e.preventDefault();
+    return;
+  }
+  // 空白处平移
+  panning = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+  svg.classList.add("panning");
+});
+
+window.addEventListener("mousemove", e => {
+  if (dragNew) {
+    const g = $("ghost");
+    g.style.left = e.clientX - dragNew.wrapRect.left + 12 + "px"; g.style.top = e.clientY - dragNew.wrapRect.top + 12 + "px";
+    return;
+  }
+  if (dragMove) {
+    const w = toWorld(e.clientX, e.clientY);
+    const n = nodes[dragMove.id];
+    n.x = Math.round(w.x + dragMove.dx); n.y = Math.round(w.y + dragMove.dy);
+    dragMove.moved = true;
+    renderAll();
+    return;
+  }
+  if (dragPort) {
+    const n = nodes[dragPort], t = NODE_TYPES[n.type];
+    const w = toWorld(e.clientX, e.clientY);
+    const startY = n.y + t.h / 2;
+    const midY = startY + (w.y - startY) / 2;
+    tempLine.setAttribute("points", `${n.x},${startY} ${n.x},${midY} ${w.x},${midY} ${w.x},${w.y}`);
+    return;
+  }
+  if (panning) {
+    view.x = panning.ox + (e.clientX - panning.sx);
+    view.y = panning.oy + (e.clientY - panning.sy);
+    applyView();
+  }
+});
+
+window.addEventListener("mouseup", e => {
+  if (dragNew) {
+    const r = svg.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const w = toWorld(e.clientX, e.clientY);
+      addNode(dragNew.type, w.x, w.y);
+    }
+    dragNew = null; $("ghost").style.display = "none";
+    return;
+  }
+  if (dragMove) { if (dragMove.moved) markDirty(); dragMove = null; return; }
+  if (dragPort) {
+    const nodeG = document.elementFromPoint(e.clientX, e.clientY);
+    const g = nodeG && nodeG.closest ? nodeG.closest("g[data-id]") : null;
+    if (g && g.dataset.id !== dragPort) linkNodes(dragPort, g.dataset.id);
+    if (tempLine) { tempLine.remove(); tempLine = null; }
+    dragPort = null; svg.classList.remove("linking");
+    return;
+  }
+  if (panning) { panning = null; svg.classList.remove("panning"); }
+});
+
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const factor = Math.exp(-e.deltaY * 0.0012);
+  zoomAt(view.k * factor, mx, my);
+}, { passive: false });
+
+svg.addEventListener("dblclick", e => {
+  const nodeG = e.target.closest && e.target.closest("g[data-id]");
+  if (nodeG) { selectNode(nodeG.dataset.id); const l = $("p-label"); if (l) { l.focus(); l.select(); } }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile(false); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openFile(); return; }
+  if (e.key === "+" || e.key === "=") { e.preventDefault(); zoomAt(view.k * 1.25); return; }
+  if (e.key === "-" || e.key === "_") { e.preventDefault(); zoomAt(view.k / 1.25); return; }
+  if (e.key === "0") { e.preventDefault(); zoomAt(1); return; }
+  if (e.key === "f" || e.key === "F") { e.preventDefault(); fitView(); return; }
+  if (e.key === "t" || e.key === "T") { e.preventDefault(); const top = findTopNode(); if (top) centerOnNode(top.id); return; }
+  if (e.key === "Delete" || e.key === "Backspace") {
+    if (selId && nodes[selId]) deleteNodeSubtree(selId);
+  }
+  if (e.key === "Escape") { selId = null; renderAll(); showProps(); }
+});
+
+/* ================= 工具栏 ================= */
+$("btn-new").addEventListener("click", () => {
+  if (dirty && !confirm("当前项目未保存，确定新建？")) return;
+  nodes = {}; edges = []; nextId = 1; selId = null; fileHandle = null; savedOnce = false;
+  fileName = "未命名.fta.json"; $("file-name").textContent = fileName;
+  clearDirty(); renderAll(); showProps();
+  $("st-result").textContent = "—"; $("st-msg").textContent = "";
+});
+$("btn-open").addEventListener("click", openFile);
+$("btn-save").addEventListener("click", () => saveFile(false));
+$("btn-saveas").addEventListener("click", () => saveFile(true));
+$("btn-calc").addEventListener("click", runCalc);
+$("btn-layout").addEventListener("click", () => { autoLayout(); fitView(); });
+$("btn-png").addEventListener("click", exportPng);
+$("btn-svg").addEventListener("click", exportSvgFile);
+$("btn-help").addEventListener("click", () => $("modal-mask").style.display = "flex");
+$("modal-mask").addEventListener("click", e => { if (e.target.id === "modal-mask") e.currentTarget.style.display = "none"; });
+
+/* ---------- 视图导航按钮 ---------- */
+$("zoom-in").addEventListener("click", () => zoomAt(view.k * 1.3));
+$("zoom-out").addEventListener("click", () => zoomAt(view.k / 1.3));
+$("zoom-fit").addEventListener("click", fitView);
+$("zoom-top").addEventListener("click", () => { const top = findTopNode(); if (top) centerOnNode(top.id); });
+$("zoom-indicator").addEventListener("click", () => zoomAt(1));
+
+/* ================= 示例模型 ================= */
+function loadDemo() {
+  nodes = {}; edges = []; nextId = 1; selId = null;
+  const mk = (type, x, y, label, extra) => {
+    const n = addNodeRaw(type, x, y, label);
+    Object.assign(n, extra || {});
+    return n;
+  };
+  const top = mk("top", 500, 90, "飞机刹车系统失效", { desc: "示例：着陆阶段刹车功能丧失" });
+  const g1 = mk("or", 500, 230, "液压或电气原因");
+  const g2 = mk("and", 330, 380, "液压双源同时失效");
+  const b1 = mk("basic", 220, 530, "主液压泵失效", { rate: 2e-5, time: 10000, desc: "失效模式：泵体磨损" });
+  const b2 = mk("basic", 440, 530, "备份液压泵失效", { rate: 1.5e-5, time: 10000, desc: "失效模式：密封件老化" });
+  const g3 = mk("vote", 640, 380, "电控表决 2/3");
+  const b3 = mk("basic", 560, 530, "BSCU 通道1失效", { rate: 8e-6, time: 10000, desc: "失效模式：通道板故障" });
+  const b4 = mk("basic", 660, 530, "BSCU 通道2失效", { rate: 8e-6, time: 10000 });
+  const b5 = mk("basic", 760, 530, "传感器信号失效", { rate: 3e-6, time: 10000, desc: "失效模式：探头漂移" });
+  edges = [
+    { from: top.id, to: g1.id },
+    { from: g1.id, to: g2.id }, { from: g1.id, to: g3.id },
+    { from: g2.id, to: b1.id }, { from: g2.id, to: b2.id },
+    { from: g3.id, to: b3.id }, { from: g3.id, to: b4.id }, { from: g3.id, to: b5.id }
+  ];
+  clearDirty(); renderAll(); fitView();
+}
+function addNodeRaw(type, x, y, label) {
+  const n = {
+    id: "n" + (nextId++), type, x, y, label, desc: "", k: 2, n: 3,
+    inputMode: "rate", rate: 1e-5, time: 10000, prob: 1e-4
+  };
+  nodes[n.id] = n;
+  return n;
+}
+
+/* ================= 启动 ================= */
+(function init() {
+  let saved = null; try { saved = localStorage.getItem(LS_KEY); } catch (e) {}
+  if (saved) {
+    try { deserialize(saved); } catch (e) { loadDemo(); }
+  } else loadDemo();
+  renderAll(); showProps(); fitView();
+})();
+</script>
+<script>
+/* ===== Obsidian 桥接：文件 IO 走宿主 Vault（仅嵌入模式生效，浏览器直开不受影响） ===== */
+(function () {
+  if (window.parent === window) return;
+  const post = (m) => window.parent.postMessage(m, "*");
+
+  window.addEventListener("message", (ev) => {
+    const d = ev.data || {};
+    if (d.type === "fta:load") {
+      try {
+        deserialize(d.content);
+        fileHandle = null; savedOnce = true;
+        clearDirty(); renderAll(); showProps(); fitView();
+        $("st-msg").textContent = "\u2713 已打开 " + fileName;
+      } catch (e) { alert("打开失败：" + e.message); }
+    } else if (d.type === "fta:save-done") {
+      fileName = d.name; $("file-name").textContent = fileName;
+      clearDirty();
+      $("st-msg").textContent = "\u2713 已保存 " + fileName;
+    }
+  });
+
+  /* 保存：首次/另存为 → 弹出宿主命名对话框；之后 → 静默写回同一文件 */
+  window.saveFile = function (saveAs) {
+    if (!saveAs && savedOnce) post({ type: "fta:save", name: fileName, content: serialize() });
+    else post({ type: "fta:save-as-dialog", suggested: fileName, content: serialize() });
+  };
+  window.openFile = function () { post({ type: "fta:open-dialog" }); };
+
+  window.exportSvgFile = function () {
+    if (!Object.keys(nodes).length) return warn("画布为空");
+    const s = buildExportSvg();
+    post({ type: "fta:export-svg", name: fileName.replace(/\.json$/, ""), content: new XMLSerializer().serializeToString(s) });
+  };
+
+  window.exportPng = function () {
+    if (!Object.keys(nodes).length) return warn("画布为空");
+    try {
+      const s = buildExportSvg();
+      const xml = new XMLSerializer().serializeToString(s);
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
+      img.onload = () => {
+        try {
+          const scale = 2;
+          const c = document.createElement("canvas");
+          c.width = img.width * scale; c.height = img.height * scale;
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url);
+          post({ type: "fta:export-png", name: fileName.replace(/\.json$/, ""), dataUrl: c.toDataURL("image/png") });
+        } catch (e) { alert("PNG 导出失败：" + e.message); }
+      };
+      img.onerror = () => alert("PNG 导出失败：SVG 渲染错误");
+      img.src = url;
+    } catch (e) { alert("PNG 导出失败：" + e.message); }
+  };
+
+  post({ type: "fta:bridge-ready" });
+})();
+</script>
+</body>
+</html>

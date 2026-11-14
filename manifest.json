@@ -1,0 +1,10 @@
+{
+  "id": "fault-tree-mini",
+  "name": "Fault Tree Mini",
+  "version": "1.0.1",
+  "minAppVersion": "1.4.0",
+  "description": "Draw and analyze fault trees (FTA) with drag-and-drop editing, exact BDD computation, and ARP4761A target checking. Projects are saved as .fta.json files inside the vault.",
+  "author": "Peter",
+  "authorUrl": "https://github.com/KillPeterAndTime/fault-tree-mini",
+  "isDesktopOnly": true
+}

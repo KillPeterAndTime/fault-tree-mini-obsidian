@@ -1,0 +1,29 @@
+/* Fault Tree Mini — Obsidian 插件样式 */
+
+/* 编辑器视图：iframe 铺满整个视图区域 */
+.view-content .fta-view {
+  padding: 0 !important;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+.fta-view .fta-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #ffffff;
+}
+
+/* 另存为对话框 */
+.fta-saveas-modal .fta-name-input {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  font-size: var(--font-ui-medium);
+}
+
+.fta-saveas-modal button.mod-cta {
+  display: block;
+  width: 100%;
+}
