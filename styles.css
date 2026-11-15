@@ -1,8 +1,8 @@
 /* Fault Tree Mini — Obsidian 插件样式 */
 
 /* 编辑器视图：iframe 铺满整个视图区域 */
-.view-content .fta-view {
-  padding: 0 !important;
+.workspace-leaf-content .view-content .fta-view {
+  padding: 0;
   overflow: hidden;
   background: var(--background-primary);
 }
